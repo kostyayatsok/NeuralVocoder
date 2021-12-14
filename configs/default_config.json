@@ -1,18 +1,29 @@
 {
     "name": "default_config",
-    "n_epoch": 10000,
+    "n_epoch": 5000,
     "batch_size": 16,
     "shuffle": false,
     "save_dir": "save_dir",
     "val_split": 0.0,
-    "LJSpeechRoot": "../tts/",
-    "wandb": 100,
+    "LJSpeechRoot": ".",
+    "wandb": 50,
     "wandb_name": "hifi",
-    "log_audio": true,
     "save_period": 100000,
     "Vocoder":
     {
-        "in_ch": 1,
+        "in_ch": 80,
+        "h_u": 256,
+        "k_u": [16, 16, 8],
+        "k_r": [3, 5, 7],
+        "D_r": [
+            [[1], [2]],
+            [[2], [6]],
+            [[3], [12]]
+        ]
+    },
+    "VocoderV2":
+    {
+        "in_ch": 80,
         "h_u": 128,
         "k_u": [16, 16, 4, 4],
         "k_r": [3, 7, 11],

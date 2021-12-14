@@ -12,9 +12,12 @@ class ResBlock(nn.Module):
                 block.append(
                     nn.Sequential(
                         LeakyReLU(),
-                        nn.Conv2d(
+                        nn.Conv1d(
                             in_ch, out_ch, kernel_size,
-                            stride=1, padding=0, dilation=d),
+                            stride=1,
+                            padding=(kernel_size-1)//2*d,
+                            dilation=d
+                        ),
                     )
                 )
             blocks.append(nn.Sequential(*block))
@@ -59,22 +62,22 @@ class HiFiGenerator(nn.Module):
     ) -> None:
         #TODO: more skip connections?
         super().__init__()
-        layers = [nn.Conv2d(in_ch, h_u, kernel_size=(7, 1), dilation=1)]
+        layers = [nn.Conv1d(in_ch, h_u, kernel_size=7, dilation=1, padding=7//2)]
         prev_ch = h_u
         for l, k in enumerate(k_u):
             new_ch = h_u//(2**l)
             layers.append(nn.Sequential(
                 LeakyReLU(),
-                nn.ConvTranspose2d(prev_ch, new_ch, kernel_size=k, stride=k//2),
+                nn.ConvTranspose1d(prev_ch, new_ch, kernel_size=k, stride=k//2),
                 MultiReceptiveFieldFusion(new_ch, new_ch, k_r, D_r)
             ))
             prev_ch = new_ch
         layers.append(LeakyReLU())
-        layers.append(nn.Conv2d(prev_ch, 1, kernel_size=(7, 1)))
+        layers.append(nn.Conv1d(prev_ch, 1, kernel_size=7, padding=7//2))
         layers.append(nn.Tanh())
         
         self.net = nn.Sequential(*layers)
     def forward(self, mel, *args, **kwargs):
-        return {'wav_pred': self.net(mel.unsqueeze(1))}
+        return {'wav_pred': self.net(mel).squeeze(1)}
     
     

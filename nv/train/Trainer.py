@@ -27,8 +27,10 @@ class Trainer:
         self.vocoder = HiFiGenerator(**config["Vocoder"]).to(self.device)
         print(f"Total model parameters: \
             {sum(p.numel() for p in self.vocoder.parameters())}")
+        from torchsummary import summary
+        summary(self.vocoder, input_size=(80, 100))
         if config.resume is not None:
-            print(f"Load text-to-mel model from checkpoint {config.resume}")
+            print(f"Load vocoder model from checkpoint {config.resume}")
             self.vocoder.load_state_dict(torch.load(config.resume))
             
         self.G_optimizer = config.init_obj(
@@ -73,8 +75,8 @@ class Trainer:
                 # except Exception as inst:
                 #     print(inst)
 
-            if self.config["wandb"]:
-                self.log_batch(batch)
+#             if self.config["wandb"]:
+#                 self.log_batch(batch)
                     
             self.vocoder.eval()
             if self.val_loader is not None:
@@ -116,6 +118,8 @@ class Trainer:
         outputs = self.vocoder(**batch)
         batch.update(outputs)
 
+        batch['mel_pred'] = self.featurizer(batch["wav_pred"], 42)['mel'] #don't care about length
+        
         #calculate loss
         batch.update(self.criterion(batch))
         return batch
@@ -124,19 +128,21 @@ class Trainer:
         idx = np.random.randint(batch["mel"].size(0))
         
         mel = batch["mel"][idx].cpu().detach().numpy()
+        mel_pred = batch["mel_pred"][idx].cpu().detach().numpy()
         wav = batch["waveform"][idx].cpu().detach().numpy()
         wav_pred = batch["wav_pred"][idx].cpu().detach().numpy()
         
         dict2log = {
             "step": self.step,
             "epoch": self.epoch,
-            f"G_loss_{mode}": self.metrics["loss"],
-            f"mel_{mode}": wandb.Image(mel, caption="Original mel"),
+            f"G_loss_{mode}": self.metrics["G_loss"],
+            f"orig_mel_{mode}": wandb.Image(mel, caption="Original mel"),
+            f"pred_mel_{mode}": wandb.Image(mel_pred, caption="Predicted mel"),
             f"orig_audio_{mode}": wandb.Audio(
-                wav, caption="Original_audio", sample_rate=22050),
+                wav, caption="Original audio", sample_rate=22050),
             f"pred_audio_{mode}": wandb.Audio(
                 wav_pred,
-                caption="Audio_from_predicted_mel", sample_rate=22050),
+                caption="Predicted audio", sample_rate=22050),
             f"text_{mode}": wandb.Html(batch["transcript"][idx]),
         }
         if "lr" in batch:
