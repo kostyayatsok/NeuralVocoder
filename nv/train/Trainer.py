@@ -94,7 +94,7 @@ class Trainer:
             if self.config["save_period"] and\
                 self.epoch % self.config["save_period"] == 0:
                     torch.save(
-                        self.text2mel_model.state_dict(),
+                        self.vocoder.state_dict(),
                         f"{self.config['save_dir']}/"+\
                         f"{self.run_id}/vocoder.pt"
                     )
@@ -152,12 +152,12 @@ class Trainer:
     @torch.no_grad()
     def log_test(self):
         return
-        self.text2mel_model.eval()
+        self.vocoder.eval()
         for i, text in enumerate(self.config["TestData"]):
             tokens, length = self.tokenizer(text)
             tokens = tokens.to(self.device)
             mask = torch.ones(tokens.size(), dtype=torch.bool, device=self.device)
-            mel = self.text2mel_model.inference(tokens, mask)
+            mel = self.vocoder.inference(tokens, mask)
             wav = self.vocoder.inference(mel).cpu().detach().numpy()[0]
             mel = mel.cpu().detach().numpy()[0]
             wandb.log({

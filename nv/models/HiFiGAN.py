@@ -65,7 +65,7 @@ class HiFiGenerator(nn.Module):
         layers = [nn.Conv1d(in_ch, h_u, kernel_size=7, dilation=1, padding=7//2)]
         prev_ch = h_u
         for l, k in enumerate(k_u):
-            new_ch = h_u//(2**l)
+            new_ch = h_u//(2**(l+1))
             layers.append(nn.Sequential(
                 LeakyReLU(),
                 nn.ConvTranspose1d(prev_ch, new_ch, kernel_size=k, stride=k//2),
