@@ -91,7 +91,7 @@ class HiFiGenerator(nn.Module):
             layers.append(nn.Sequential(
                 LeakyReLU(SLOPE),
                 weight_norm(nn.ConvTranspose1d(
-                    prev_ch, new_ch, kernel_size=k, stride=k//2
+                    prev_ch, new_ch, kernel_size=k, stride=k//2, stride=k//4
                 )),
                 MultiReceptiveFieldFusion(new_ch, new_ch, k_r, D_r)
             ))
