@@ -1,6 +1,6 @@
 {
     "name": "default_config",
-    "n_epoch": 5000,
+    "n_epoch": 10000,
     "batch_size": 16,
     "shuffle": false,
     "save_dir": "save_dir",
@@ -9,7 +9,7 @@
     "wandb": 50,
     "wandb_name": "hifi",
     "save_period": 100,
-    "Vocoder":
+    "VocoderV3":
     {
         "in_ch": 80,
         "h_u": 256,
@@ -21,7 +21,7 @@
             [[3], [12]]
         ]
     },
-    "VocoderV2":
+    "Vocoder":
     {
         "in_ch": 80,
         "h_u": 128,
@@ -38,7 +38,8 @@
         "type": "Adam",
         "args":
         {
-          "lr": 1e-4
+          "lr": 0.0002,
+          "betas": [0.8, 0.99]
         }
     },
     "loss":

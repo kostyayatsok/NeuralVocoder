@@ -4,6 +4,18 @@ from torch.nn.modules.activation import LeakyReLU
 from torch.nn.utils import weight_norm
 
 SLOPE = 0.1
+
+def init_weights(model):
+    def init_fn(m):
+        if isinstance(m, nn.Linear) or\
+           isinstance(m, nn.Conv2d) or\
+           isinstance(m, nn.ConvTranspose2d) or\
+           isinstance(m, nn.ConvTranspose1d) or\
+           isinstance(m, nn.Conv1d
+        ):
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+    model.apply(init_fn)
+
 class ResBlock(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, dilations) -> None:
         super().__init__()
@@ -91,6 +103,8 @@ class HiFiGenerator(nn.Module):
         layers.append(nn.Tanh())
         
         self.net = nn.Sequential(*layers)
+        
+        init_weights(self)
     def forward(self, mel, *args, **kwargs):
         return {'wav_pred': self.net(mel).squeeze(1)}
     
