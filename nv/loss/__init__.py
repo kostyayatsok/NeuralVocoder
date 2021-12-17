@@ -1,1 +1,1 @@
-from nv.loss.loss import HiFiLoss
+from nv.loss.loss import HiFiGLoss, HiFiDLoss

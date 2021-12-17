@@ -8,7 +8,7 @@ def build_dataloaders(config):
     if not os.path.exists('LJSpeech-1.1') and not os.path.exists(f"{config['LJSpeechRoot']}/LJSpeech-1.1"):
         os.system('wget https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2')
         os.system('tar -xjf LJSpeech-1.1.tar.bz2')
-    dataset = LJSpeechDataset(config["LJSpeechRoot"])
+    dataset = LJSpeechDataset(config["LJSpeechRoot"], config["AudioLen"])
     if config["val_split"] > 0:
         val_len = int(len(dataset) * config["val_split"])
         train_len = len(dataset) - val_len

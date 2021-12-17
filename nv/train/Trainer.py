@@ -13,6 +13,7 @@ from nv.utils.util import write_json
 from tqdm import tqdm
 import torchaudio
 from torchsummary import summary
+import torch.nn.functional as F
 
 class Trainer:
     def __init__(self, config):
@@ -50,7 +51,7 @@ class Trainer:
 
         self.D_optimizer = config.init_obj(
             config["optimizer"], torch.optim,
-            self.MPD.parameters() + self.MSD.parameters()
+            list(self.MPD.parameters()) + list(self.MSD.parameters())
         )
         self.D_scheduler = config.init_obj(
             config["scheduler"], torch.optim.lr_scheduler, self.D_optimizer
@@ -65,7 +66,18 @@ class Trainer:
         
         if config["wandb"]:
             wandb.init(project=config["wandb_name"])
-        self.metrics = MetricsTracker(["G_loss", "mel_loss"])
+        self.metrics = MetricsTracker([
+            "mel_loss",
+            "feature_loss",
+            "G_MPD_fake",
+            "G_MSD_fake",
+            "G_loss",
+            "D_MPD_fake",
+            "D_MSD_fake",
+            "D_MPD_real",
+            "D_MSD_real",
+            "D_loss",
+        ])
         self.step = 0
         
         self.config = config
@@ -76,8 +88,9 @@ class Trainer:
             self.MPD.train()
             self.MSD.train()
             for batch in self.train_loader:
-                try:
+#                 try:
                     self.G_optimizer.zero_grad()
+                    self.D_optimizer.zero_grad()
                     
                     batch = self.process_batch(batch, True)
                     
@@ -85,9 +98,8 @@ class Trainer:
                         self.step % self.config["wandb"] == 0:
                             self.log_batch(batch)
                     self.step += 1
-                    break
-                except Exception as inst:
-                    print(inst)
+#                 except Exception as inst:
+#                     print(inst)
             
             self.vocoder.eval()
             self.MPD.eval()
@@ -139,7 +151,9 @@ class Trainer:
 
         #run model
         batch['wav_pred'] = self.vocoder(**batch)
-        
+        pad = batch["waveform"].size(-1) - batch["wav_pred"].size(-1)
+        batch["wav_pred"] = F.pad(batch["wav_pred"], (0, pad))
+
 
         batch['mel_pred'] = self.featurizer(batch["wav_pred"], 42)['mel'] #don't care about length
         
@@ -154,7 +168,7 @@ class Trainer:
         if BACKPROP:
             batch["D_loss"].backward()
             self.D_optimizer.step()
-            batch["lr_D"] = self.scheduler.get_last_lr()[0]
+            batch["lr_D"] = self.D_scheduler.get_last_lr()[0]
             
         batch['G_MPD_fake'] = self.MPD(batch["wav_pred"])
         batch['G_MSD_fake'] = self.MSD(batch["wav_pred"])
@@ -170,7 +184,7 @@ class Trainer:
         if BACKPROP:
             batch["G_loss"].backward()
             self.G_optimizer.step()
-            batch["lr_G"] = self.scheduler.get_last_lr()[0]
+            batch["lr_G"] = self.G_scheduler.get_last_lr()[0]
                     
         return batch
     
@@ -185,7 +199,16 @@ class Trainer:
         dict2log = {
             "step": self.step,
             "epoch": self.epoch,
+            f"mel_loss_{mode}": self.metrics["mel_loss"],
+            f"feature_loss_{mode}": self.metrics["feature_loss"],
+            f"G_MPD_fake_{mode}": self.metrics["G_MPD_fake"],
+            f"G_MSD_fake_{mode}": self.metrics["G_MSD_fakes"],
             f"G_loss_{mode}": self.metrics["G_loss"],
+            f"D_MPD_fake_{mode}": self.metrics["D_MPD_fake"],
+            f"D_MSD_fake_{mode}": self.metrics["D_MSD_fake"],
+            f"D_MPD_real_{mode}": self.metrics["D_MPD_real"],
+            f"D_MSD_real_{mode}": self.metrics["D_MSD_real"],
+            f"D_loss_{mode}": self.metrics["D_loss"],
             f"orig_mel_{mode}": wandb.Image(mel, caption="Original mel"),
             f"pred_mel_{mode}": wandb.Image(mel_pred, caption="Predicted mel"),
             f"orig_audio_{mode}": wandb.Audio(

@@ -16,16 +16,19 @@ class HiFiGLoss(nn.Module):
             dim=0
         ).view(batch["mel"].size())
 
-        pad = batch["mel"].size(-1) - batch["mel_pred"].size(-1)
-        batch["mel_pred"] = F.pad(batch["mel_pred"], (0, pad), "constant", -11.5)
+#         pad = batch["mel"].size(-1) - batch["mel_pred"].size(-1)
+#         batch["mel_pred"] = F.pad(batch["mel_pred"], (0, pad), "constant", -11.5)
 
         mel_loss = F.l1_loss(batch["mel_pred"][mask], batch["mel"][mask])
 
-        feature_loss = F.l1_loss(batch["G_MPD_fake"], batch["G_MPD_real"])
-        feature_loss += F.l1_loss(batch["G_MSD_fake"], batch["G_MSD_real"])
+        feature_loss = 0
+        for fake, real in zip(batch["G_MPD_fake"], batch["G_MPD_real"]):
+            feature_loss += F.l1_loss(fake, real)
+        for fake, real in zip(batch["G_MSD_fake"], batch["G_MSD_real"]):
+            feature_loss += F.l1_loss(fake, real)
         
-        G_MPD_fake = 0, 0
-        G_MSD_fake = 0, 0
+        G_MPD_fake = 0
+        G_MSD_fake = 0
         for x in batch['G_MPD_fake']: G_MPD_fake += F.mse_loss(x, torch.ones_like(x))
         for x in batch['G_MSD_fake']: G_MSD_fake += F.mse_loss(x, torch.ones_like(x))
         

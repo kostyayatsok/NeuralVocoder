@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import weight_norm, spectral_norm
-from utils import SLOPE, init_weights
+from nv.models.utils import SLOPE, init_weights
 
 class MultiPeriodDiscriminator(nn.Module):
     def __init__(self, periods: List, *args, **kwargs) -> None:
@@ -11,7 +11,7 @@ class MultiPeriodDiscriminator(nn.Module):
         self.periods = periods
         classifiers = []
         for p in self.periods:
-            classifiers.append(PeriodClassifier(p))
+            classifiers.append(PeriodClassifier())
         self.classifiers = nn.ModuleList(classifiers)
         
         init_weights(self)
@@ -22,18 +22,18 @@ class MultiPeriodDiscriminator(nn.Module):
         T = audio.size(1)
         res = []
         for p, classifier in zip(self.periods, self.classifiers):
-            x = F.pad(audio, (0, T % p))
-            x = x.view(-1, 1, p, T // p)
+            x = F.pad(audio, (0, (p - T % p) % p))
+            x = x.view(-1, 1, p, x.size(1) // p)
             x = classifier(x)
             res.append(x)
         return res
     
 class PeriodClassifier(nn.Module):
     # TODO weight normalization
-    def __init__(self, p: int) -> None:
+    def __init__(self) -> None:
         super().__init__()
         layers = []
-        in_ch = p
+        in_ch = 1
         for l in range(1, 5):
             out_ch = 2**(5+l)
             layers.append(nn.Sequential(  
@@ -65,14 +65,14 @@ class MultiScaleDiscriminator(nn.Module):
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         res = []
         for classifier in self.classifiers:
-            res.append(classifier(x))
+            res.append(classifier(x.unsqueeze(1)))
         return res
 
 class ScaleClassifier(nn.Module):
     def __init__(self, x2, norm_layer) -> None:
         super().__init__()
         self.pooling = nn.Sequential(
-            nn.AvgPool1d(4, 2, padding=2) for _ in range(x2)
+            *[nn.AvgPool1d(4, 2, padding=2) for _ in range(x2)]
         )
         self.net = nn.Sequential(
             norm_layer(nn.Conv1d(1, 128, 15, 1, padding=7)),

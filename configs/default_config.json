@@ -1,11 +1,12 @@
 {
     "name": "default_config",
-    "n_epoch": 10000,
+    "n_epoch": 1000,
     "batch_size": 16,
-    "shuffle": false,
+    "shuffle": true,
     "save_dir": "save_dir",
     "val_split": 0.05,
     "LJSpeechRoot": ".",
+    "AudioLen": 8192,
     "wandb": 50,
     "wandb_name": "hifi",
     "save_period": 100,
@@ -54,9 +55,16 @@
           "gamma": 0.999
         }
     },
-    "loss":
+    "lossG":
     {
-        "type": "HiFiLoss",
+        "type": "HiFiGLoss",
+        "args":
+        {
+        }
+    },
+    "lossD":
+    {
+        "type": "HiFiDLoss",
         "args":
         {
         }
