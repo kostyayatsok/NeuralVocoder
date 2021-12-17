@@ -7,10 +7,12 @@ import wandb
 from nv.data_utils import MelSpectrogram
 from nv.data_utils.build_dataloaders import build_dataloaders
 from nv.models import HiFiGenerator
+from nv.models import MultiScaleDiscriminator, MultiPeriodDiscriminator
 from nv.utils import MetricsTracker
 from nv.utils.util import write_json
 from tqdm import tqdm
 import torchaudio
+from torchsummary import summary
 
 class Trainer:
     def __init__(self, config):
@@ -25,23 +27,38 @@ class Trainer:
                 f"{0 if self.val_loader is None else len(self.val_loader)} for validation.")
             
         self.vocoder = HiFiGenerator(**config["Vocoder"]).to(self.device)
-        print(f"Total model parameters: \
-            {sum(p.numel() for p in self.vocoder.parameters())}")
-        from torchsummary import summary
-        summary(self.vocoder, input_size=(80, 100))
+        self.MSD = MultiScaleDiscriminator().to(self.device)
+        self.MPD = MultiPeriodDiscriminator(**config["MPD"]).to(self.device)
+        print(f"Total vocoder parameters: \
+                {sum(p.numel() for p in self.vocoder.parameters())}")
+        print(f"Total MSD parameters: \
+                {sum(p.numel() for p in self.MSD.parameters())}")
+        print(f"Total MPD parameters: \
+                {sum(p.numel() for p in self.MPD.parameters())}")
+
+        # summary(self.vocoder, input_size=(80, 100))
         if config.resume is not None:
             print(f"Load vocoder model from checkpoint {config.resume}")
             self.vocoder.load_state_dict(torch.load(config.resume))
-            
+
         self.G_optimizer = config.init_obj(
             config["optimizer"], torch.optim, self.vocoder.parameters()
         )
-        # self.scheduler = config.init_obj(
-        #     config["scheduler"], torch.optim.lr_scheduler, self.G_optimizer,
-        #     steps_per_epoch=len(self.train_loader), epochs=config["n_epoch"]
-        # )
+        self.G_scheduler = config.init_obj(
+            config["scheduler"], torch.optim.lr_scheduler, self.G_optimizer
+        )
+
+        self.D_optimizer = config.init_obj(
+            config["optimizer"], torch.optim,
+            self.MPD.parameters() + self.MSD.parameters()
+        )
+        self.D_scheduler = config.init_obj(
+            config["scheduler"], torch.optim.lr_scheduler, self.D_optimizer
+        )
+
         
-        self.criterion = config.init_obj(config["loss"], nv.loss)
+        self.criterionD = config.init_obj(config["lossD"], nv.loss)
+        self.criterionG = config.init_obj(config["lossG"], nv.loss)
         
         self.featurizer =\
             MelSpectrogram(config["MelSpectrogram"]).to(self.device)
@@ -56,35 +73,30 @@ class Trainer:
     def train(self):
         for self.epoch in tqdm(range(1, self.config["n_epoch"]+1)):
             self.vocoder.train()
+            self.MPD.train()
+            self.MSD.train()
             for batch in self.train_loader:
-                # try:
+                try:
                     self.G_optimizer.zero_grad()
                     
-                    batch = self.process_batch(batch)
-                    self.metrics(batch)
-                    batch["G_loss"].backward()
-                    self.G_optimizer.step()
-                    # self.scheduler.step()
-                    # batch["lr"] = self.scheduler.get_last_lr()[0]
+                    batch = self.process_batch(batch, True)
                     
                     if self.config["wandb"] and\
                         self.step % self.config["wandb"] == 0:
                             self.log_batch(batch)
                     self.step += 1
                     break
-                # except Exception as inst:
-                #     print(inst)
-
-#             if self.config["wandb"]:
-#                 self.log_batch(batch)
-                    
+                except Exception as inst:
+                    print(inst)
+            
             self.vocoder.eval()
+            self.MPD.eval()
+            self.MSD.eval()
             if self.val_loader is not None:
                 with torch.no_grad():
                     for batch in self.val_loader:
                         try:
                             batch = self.process_batch(batch)
-                            self.metrics(batch)
                         except Exception as inst:
                             print(inst)
                 if self.config["wandb"]:
@@ -98,10 +110,21 @@ class Trainer:
                         f"{self.config['save_dir']}/"+\
                         f"{self.run_id}/vocoder.pt"
                     )
-        
+                    torch.save(
+                        self.MPD.state_dict(),
+                        f"{self.config['save_dir']}/"+\
+                        f"{self.run_id}/MPD.pt"
+                    )
+                    torch.save(
+                        self.MSD.state_dict(),
+                        f"{self.config['save_dir']}/"+\
+                        f"{self.run_id}/MSD.pt"
+                    )
+            self.G_scheduler.step()
+            self.D_scheduler.step()
 
     
-    def process_batch(self, batch):
+    def process_batch(self, batch, BACKPROP=False):
         #move tensors to cuda:
         for key in [
             "waveform", "waveform_length", "tokens", "token_lengths"]:
@@ -113,15 +136,42 @@ class Trainer:
         )
         batch['mel_mask'] = self.lens2mask(
             batch['mel'].size(-1), batch['mel_length'])
-            
+
         #run model
-        outputs = self.vocoder(**batch)
-        batch.update(outputs)
+        batch['wav_pred'] = self.vocoder(**batch)
+        
 
         batch['mel_pred'] = self.featurizer(batch["wav_pred"], 42)['mel'] #don't care about length
         
+        batch['D_MPD_fake'] = self.MPD(batch["wav_pred"].detach())
+        batch['D_MSD_fake'] = self.MSD(batch["wav_pred"].detach())
+        batch['D_MPD_real'] = self.MPD(batch["waveform"].detach())
+        batch['D_MSD_real'] = self.MSD(batch["waveform"].detach())
+        #calculate D loss
+        batch.update(
+            self.criterionD(batch)
+        )
+        if BACKPROP:
+            batch["D_loss"].backward()
+            self.D_optimizer.step()
+            batch["lr_D"] = self.scheduler.get_last_lr()[0]
+            
+        batch['G_MPD_fake'] = self.MPD(batch["wav_pred"])
+        batch['G_MSD_fake'] = self.MSD(batch["wav_pred"])
+        batch['G_MPD_real'] = self.MPD(batch["waveform"])
+        batch['G_MSD_real'] = self.MSD(batch["waveform"])
+
         #calculate loss
-        batch.update(self.criterion(batch))
+        batch.update(
+            self.criterionG(batch)
+        )
+        self.metrics(batch)        
+        
+        if BACKPROP:
+            batch["G_loss"].backward()
+            self.G_optimizer.step()
+            batch["lr_G"] = self.scheduler.get_last_lr()[0]
+                    
         return batch
     
     def log_batch(self, batch, mode="train"):
