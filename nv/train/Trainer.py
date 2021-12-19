@@ -88,7 +88,7 @@ class Trainer:
             self.MPD.train()
             self.MSD.train()
             for batch in self.train_loader:
-#                 try:
+                try:
                     self.G_optimizer.zero_grad()
                     self.D_optimizer.zero_grad()
                     
@@ -98,8 +98,8 @@ class Trainer:
                         self.step % self.config["wandb"] == 0:
                             self.log_batch(batch)
                     self.step += 1
-#                 except Exception as inst:
-#                     print(inst)
+                except Exception as inst:
+                    print(inst)
             
             self.vocoder.eval()
             self.MPD.eval()
@@ -202,7 +202,7 @@ class Trainer:
             f"mel_loss_{mode}": self.metrics["mel_loss"],
             f"feature_loss_{mode}": self.metrics["feature_loss"],
             f"G_MPD_fake_{mode}": self.metrics["G_MPD_fake"],
-            f"G_MSD_fake_{mode}": self.metrics["G_MSD_fakes"],
+            f"G_MSD_fake_{mode}": self.metrics["G_MSD_fake"],
             f"G_loss_{mode}": self.metrics["G_loss"],
             f"D_MPD_fake_{mode}": self.metrics["D_MPD_fake"],
             f"D_MSD_fake_{mode}": self.metrics["D_MSD_fake"],
